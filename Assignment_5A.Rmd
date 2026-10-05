@@ -1,0 +1,147 @@
+---
+title: "Assignment 5A - Tidying and Transforming Data"
+author: "Akash Sourav"
+date: "2026-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 7, fig.height = 4)
+library(tidyverse)
+```
+
+## Approach
+
+For this assignment, I plan to use R to clean, organize, and analyze the airline data. I will first recreate the dataset while preserving the missing values. I will then populate the missing airline names and transform the dataset from wide format to long format. After cleaning the data, I will compare the percentage of delayed flights for the two airlines overall and across the five cities. Finally, I will explain why the overall results differ from the city-by-city results.
+
+## Creating the Original Data csv file
+
+The data contain on-time and delayed flight counts for Alaska and AM West across five cities. I create the data frame directly in R, as allowed by the assignment, and export it as a CSV. Missing airline labels and the empty separator row are preserved before cleaning.
+
+
+```{r original data}
+airline_data <- data.frame(
+  airline = c("ALASKA", NA, NA, "AM WEST", NA),
+  status = c("on time", "delayed", NA, "on time", "delayed"),
+  "Los Angeles" = c(497, 62, NA, 694, 117),
+  "Phoenix" = c(221, 12, NA, 4840, 415),
+  "San Diego" = c(212, 20, NA, 383, 65),
+  "San Francisco" = c(503, 102, NA, 320, 129),
+  "Seattle" = c(1841, 305, NA, 201, 61),
+  check.names = FALSE
+)
+
+knitr::kable(airline_data)
+write.csv(airline_data, "airline_data.csv", row.names = FALSE, na = "")
+```
+
+## Populating Missing Data
+
+The completely empty row is a separator, so I remove it. The missing airline names refer to the airline in the previous row, so I use `fill()` to carry those names down. Flight counts are already present for every actual observation.
+
+```{r clean data}
+airline_clean <- airline_data %>%
+  filter(!is.na(status)) %>%
+  fill(airline, .direction = "down")
+
+knitr::kable(airline_clean)
+```
+
+## Transforming Wide Data to Long Data
+
+I use `pivot_longer()` to combine the five city columns into a single city column and a flight count column. Each row now represents one airline, status, and city combination.
+
+```{r long data}
+airline_long <- airline_clean %>%
+  pivot_longer(
+    cols = -c(airline, status),
+    names_to = "city",
+    values_to = "flights"
+  )
+
+knitr::kable(airline_long)
+```
+
+## Flight Count Analysis
+
+```{r flight counts}
+flight_counts <- airline_long %>%
+  group_by(airline, status) %>%
+  summarise(flights = sum(flights), .groups = "drop")
+
+knitr::kable(flight_counts)
+```
+
+Alaska has 3,274 on-time flights and 501 delayed flights, for 3,775 total flights. AM West has 6,438 on-time flights and 787 delayed flights, for 7,225 total flights. AM West has more delayed flights, but it also has more flights overall. Percentages allow a more useful comparison.
+
+## Overall Delay Comparison
+
+I calculate each airline's delay percentage as its total delayed flights divided by its total flights, multiplied by 100.
+
+```{r overall comparison}
+overall_results <- airline_long %>%
+  group_by(airline) %>%
+  summarise(
+    total_flights = sum(flights),
+    delayed_flights = sum(flights[status == "delayed"]),
+    .groups = "drop"
+  ) %>%
+  mutate(delay_percent = 100 * delayed_flights / total_flights)
+
+knitr::kable(overall_results, digits = 2)
+
+ggplot(overall_results, aes(x = airline, y = delay_percent, fill = airline)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = paste0(round(delay_percent, 2), "%")), vjust = -0.5) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Overall Percentage of Delayed Flights",
+       x = "Airline", y = "Delayed flights (%)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+AM West has the lower overall delay rate: 10.89%, compared with Alaska's 13.27%. Based only on the combined totals, AM West appears to perform better.
+
+## Delay Comparison by City
+
+```{r city comparison}
+city_results <- airline_long %>%
+  group_by(airline, city) %>%
+  summarise(
+    total_flights = sum(flights),
+    delayed_flights = sum(flights[status == "delayed"]),
+    .groups = "drop"
+  ) %>%
+  mutate(delay_percent = 100 * delayed_flights / total_flights) %>%
+  arrange(city, airline)
+
+knitr::kable(city_results, digits = 2)
+
+ggplot(city_results, aes(x = city, y = delay_percent, fill = airline)) +
+  geom_col(position = "dodge") +
+  labs(title = "Percentage of Delayed Flights by City",
+       x = "City", y = "Delayed flights (%)", fill = "Airline") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
+```
+
+Alaska has a lower delay percentage in all five cities. Its delay rates range from 5.15% in Phoenix to 16.86% in San Francisco. AM West's rates range from 7.90% in Phoenix to 28.73% in San Francisco. This city-by-city comparison gives the opposite ranking from the overall comparison.
+
+## Explaining the Difference
+
+```{r flight distribution}
+flight_distribution <- city_results %>%
+  group_by(airline) %>%
+  mutate(share_of_airline_flights = 100 * total_flights / sum(total_flights)) %>%
+  ungroup() %>%
+  select(airline, city, total_flights, share_of_airline_flights)
+
+knitr::kable(flight_distribution, digits = 2)
+```
+
+The overall delay percentage is a weighted average of the city-level percentages. Cities with more flights have more influence on an airline's overall result, and the two airlines have very different flight distributions.
+
+About 72.73% of AM West's flights are to Phoenix, where both airlines have their lowest delay rates. About 56.85% of Alaska's flights are to Seattle, where delays are more common than in Phoenix. AM West's large share of flights to Phoenix lowers its overall delay percentage, even though Alaska has the lower delay rate within every city.
+
+This reversal is an example of Simpson's paradox. Alaska performs better in the within-city comparisons, while AM West has the lower overall delay rate because the airlines serve different proportions of flights to each city. Both comparisons are correct, but they answer different questions. These counts alone do not establish why flights were delayed.

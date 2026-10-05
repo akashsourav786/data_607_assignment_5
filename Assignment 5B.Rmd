@@ -1,0 +1,160 @@
+---
+title: "Assignment 5B - Chess ELO Calculations"
+author: "Akash Sourav"
+date: "2026-10-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Approach
+
+I will build on the chess tournament data from Project 1. For each player, I will calculate an Elo expected score against each actual opponent using both players' pre-tournament ratings. I will add these expected scores, subtract the total from the player's actual tournament score, and identify the five largest positive and negative differences.
+
+## Data Import
+
+```{r data extraction}
+tournament <- readLines("tournamentinfo.txt")
+head(tournament, 10)
+```
+
+## Data Parsing
+
+```{r clean up data}
+player_lines <- tournament[seq(5, length(tournament), by = 3)]
+
+head(player_lines)
+length(player_lines)
+```
+
+
+
+```{r extract all player info}
+player_number <- as.numeric(
+  trimws(substr(player_lines, 1, 5))
+)
+
+player_name <- trimws(
+  substr(player_lines, 7, 40)
+)
+
+total_points <- as.numeric(
+  trimws(substr(player_lines, 42, 45))
+)
+
+players <- data.frame(
+  player_number,
+  player_name,
+  total_points
+)
+
+head(players)
+```
+
+
+```{r add rating colomn}
+rating_lines <- tournament[seq(6, length(tournament), by = 3)]
+
+players$state <- trimws(substr(rating_lines, 1, 5))
+
+players$pre_rating <- as.numeric(
+  sub(".*R:\\s*([0-9]+).*", "\\1", rating_lines)
+)
+
+head(players)
+```
+
+
+```{r}
+round_results <- strsplit(player_lines, "|", fixed = TRUE)
+
+opponent_numbers <- lapply(round_results, function(fields) {
+  as.numeric(stringr::str_extract(fields[4:10], "\\d+"))
+})
+
+opponent_numbers[[1]]
+```
+
+
+
+```{r}
+players$avg_opponent_rating <- sapply(opponent_numbers, function(opponents) {
+  opponent_ratings <- players$pre_rating[
+    match(opponents, players$player_number)
+  ]
+
+  round(mean(opponent_ratings, na.rm = TRUE))
+})
+
+head(players)
+```
+
+## Elo Expected Scores
+
+I use the expected-score formula from Cedric Beaume's [Understanding the Elo rating system, equation 32](https://cbeaume.com/download/EloRatingSystem.pdf):
+
+\[
+E_A = \frac{1}{1 + 10^{(R_B - R_A)/400}}
+\]
+
+Here, \(R_A\) is the player's pre-tournament rating and \(R_B\) is the opponent's pre-tournament rating. An expected score includes wins and draws: equal ratings give an expected score of 0.5 points.
+
+```{r expected scores}
+expected_scores <- lapply(seq_len(nrow(players)), function(i) {
+  opponents <- opponent_numbers[[i]]
+  opponents <- opponents[!is.na(opponents)]
+
+  opponent_ratings <- players$pre_rating[
+    match(opponents, players$player_number)
+  ]
+
+  # Missing ratings for actual opponents should not be silently ignored.
+  stopifnot(!is.na(players$pre_rating[i]), !anyNA(opponent_ratings))
+
+  1 / (1 + 10^((opponent_ratings - players$pre_rating[i]) / 400))
+})
+
+players$expected_score <- sapply(expected_scores, sum)
+players$difference <- players$total_points - players$expected_score
+
+elo_results <- data.frame(
+  player_name = players$player_name,
+  pre_rating = players$pre_rating,
+  actual_score = players$total_points,
+  expected_score = players$expected_score,
+  difference = players$difference
+)
+
+knitr::kable(elo_results, digits = 3)
+```
+
+Rounds without an opponent number are excluded from Elo expectations. Actual scores are the reported tournament totals; any bye or forfeit points included in those totals remain included in this comparison. Positive differences indicate overperformance, and negative differences indicate underperformance. Rankings use unrounded values.
+
+## Top Five Overperformers
+
+```{r overperformers}
+overperformers <- elo_results %>%
+  arrange(desc(difference), player_name) %>%
+  head(5)
+
+knitr::kable(overperformers, digits = 3)
+```
+
+## Top Five Underperformers
+
+```{r underperformers}
+underperformers <- elo_results %>%
+  arrange(difference, player_name) %>%
+  head(5)
+
+knitr::kable(underperformers, digits = 3)
+```
+
+## Findings
+
+`r overperformers$player_name[1]` had the largest actual-minus-expected difference, scoring `r overperformers$actual_score[1]` points compared with `r round(overperformers$expected_score[1], 3)` expected points. `r underperformers$player_name[1]` had the smallest difference, scoring `r underperformers$actual_score[1]` points compared with `r round(underperformers$expected_score[1], 3)` expected points.
+
+These differences compare tournament outcomes with expectations based on pre-tournament ratings and the actual opponents faced.
