@@ -145,3 +145,6 @@ The overall delay percentage is a weighted average of the city-level percentages
 About 72.73% of AM West's flights are to Phoenix, where both airlines have their lowest delay rates. About 56.85% of Alaska's flights are to Seattle, where delays are more common than in Phoenix. AM West's large share of flights to Phoenix lowers its overall delay percentage, even though Alaska has the lower delay rate within every city.
 
 This reversal is an example of Simpson's paradox. Alaska performs better in the within-city comparisons, while AM West has the lower overall delay rate because the airlines serve different proportions of flights to each city. Both comparisons are correct, but they answer different questions. These counts alone do not establish why flights were delayed.
+
+## Citation
+OpenAI. (2026). ChatGPT (GPT-5.6 Sol) [Large language model]. https://chatgpt.com. Accessed October 4, 2026.
